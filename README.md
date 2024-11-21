@@ -1,4 +1,4 @@
-Affective Priming Experiment: Biobehavioral Study
+***Affective Priming Experiment: Biobehavioral Study***
 
 This repository contains the code and resources required to implement the affective priming experiment, as described in the protocol "Biobehavioral Study of Affective Priming and Its Relationship with Emotional Dysregulation". The experiment is part of a research project conducted at the Neuroscience and Experimental Psychology Laboratory of Universidad del Salvador (USAL).
 Experiment Description
