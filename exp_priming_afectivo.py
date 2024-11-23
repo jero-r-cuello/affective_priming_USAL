@@ -148,7 +148,7 @@ if keys:
 
 
 # Trials posta
-if expInfo["session"] == 2:
+if expInfo["orden_exp"] == 2:
     supra_bloques["nombre_supra_bloques"] = supra_bloques["nombre_supra_bloques"].iloc[::-1].reset_index(drop=True)
 
 for supra_bloque in supra_bloques["nombre_supra_bloques"]:
