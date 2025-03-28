@@ -81,6 +81,15 @@ new_annotations = mne.Annotations(
 raw.set_annotations(new_annotations)
 
 raw.plot(scalings=scalings)
+
+#%% Preprocesamiento (WIP)
+# 2. Filtrado de la señal
+raw.filter(l_freq=0.1, h_freq=40, fir_design='firwin')  # Filtrado pasa-banda (0.1-40 Hz)
+
+# 3. Detección y eliminación de ruido
+raw.notch_filter(freqs=[50, 60])  # Elimina ruido de la red eléctrica (50/60Hz)
+
+raw.plot(scalings=scalings)
 #%% Usar MNE para ver por epochs
 event_dict, event_id = mne.events_from_annotations(raw)
 
@@ -122,7 +131,6 @@ raw_subset1 = raw.copy().crop(tmin=0, tmax=split_time_exp_1-1)
 raw_subset2 = raw.copy().crop(tmin=split_time_exp_1, tmax=raw.times[-1])
 
 subsets = [raw_subset1, raw_subset2]
-# %%
 
 #%% Sacar ERP para el GFP (es decir todos los canales) por exp
 gfp_congruente = []

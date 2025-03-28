@@ -4,8 +4,8 @@ import numpy as np
 import os
 import matplotlib
 %matplotlib qt
+
 import matplotlib.pyplot as plt
-import mne
 import neurokit2 as nk
 
 #%% Leer los datos comportamentales
@@ -51,9 +51,10 @@ df_beh['response_raw'] = df_beh['response_raw'].str.replace("'", "")
 
 # Crear una nueva columna de aciertos (1 si la respuesta fue correcta, 0 si no)
 df_beh['acierto'] = df_beh.apply(
-    lambda row: 1 if (row['response_raw'] == 'right' and row['valencia_rostro'] == 'positiva') or 
-                      (row['response_raw'] == 'left' and row['valencia_rostro'] == 'negativa') 
-    else 0, axis=1)
+    lambda row: "acierto" if ((row['response_raw'] == 'right' and row['valencia_rostro'] == 'positiva') or
+                              (row['response_raw'] == 'left'  and row['valencia_rostro'] == 'negativa'))
+    else ("omision" if pd.isna(row['response_raw']) else "error"),
+    axis=1)
 
 # Crear una nueva columna de sexo (para comprobar efectos por sexo del rostro)
 df_beh['rostro_sexo'] = df_beh.apply(
@@ -87,4 +88,82 @@ resultados_bloque = []
 for condicion in condiciones:
     resultados_bloque.append(calcular_metricas(df_beh, ['bloque'] + [condicion]))
 
+# %% Generar los códigos que pidio Lolo para Matlab
+
+def cod_valencia_rostro(val):
+    """
+    'Po' si es 'positiva', 'Ne' si es 'negativa'
+    """
+    if val == "positiva":
+        return "Po"
+    elif val == "negativa":
+        return "Ne"
+    else:
+        return "DesconocidoVal"
+
+def cod_arousal_palabra(val):
+    """
+    'Baj' si es 'bajo', 'Alt' si es 'alto'
+    """
+    if val == "bajo":
+        return "Baj"
+    elif val == "alto":
+        return "Alt"
+    else:
+        return "DesconocidoArousal"
+
+def cod_congruencia(val):
+    """
+    'Con' si es 'congruente', 'Inc' si es 'incongruente'
+    """
+    if val == "congruente":
+        return "Con"
+    elif val == "incongruente":
+        return "Inc"
+    else:
+        return "DesconocidoCong"
+
+def cod_acierto(val):
+    """
+    'Ok' si es acierto, 'Mal' si es error, 'Nan' si es omision
+    """
+    if val == "acierto":
+        return "Ok"
+    elif val == "error":
+        return "Mal"
+    elif val == "omision":
+        return "Nan"
+    else:
+        return "DesconocidoAcierto"
+
+def cod_sexo_rostro(val):
+    """
+    'M' si es mujer, 'H' si es hombre
+    """
+    if val == "mujer":
+        return "M"
+    elif val == "hombre":
+        return "H"
+    else:
+        return "DesconocidoSexo"
+
+def cod_bloque_experimental(val):
+    """
+    'Etq' si es 'etiqueta', 'Em' si es 'emocionalmente activante'
+    """
+    if val == "etiqueta":
+        return "Etq"
+    elif val == "emocionalmente_activantes":
+        return "Em"
+    else:
+        return "DesconocidoBloque"
+
+df_beh["label"] = (
+    df_beh["valencia_rostro"].apply(cod_valencia_rostro) +
+    df_beh["arousal_palabra"].apply(cod_arousal_palabra) +
+    df_beh["congruente"].apply(cod_congruencia) +
+    df_beh["acierto"].apply(cod_acierto) +
+    df_beh["rostro_sexo"].apply(cod_sexo_rostro) +
+    df_beh["exp"].apply(cod_bloque_experimental)
+)
 # %%
