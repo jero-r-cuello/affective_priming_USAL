@@ -7,6 +7,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import mne
 import neurokit2 as nk
+
 #%% Seleccionar el archivo que queres (WIP)
 # Leer los datos
 data = np.loadtxt('datos_physio/Pre-Experimento-S2.txt')

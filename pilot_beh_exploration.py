@@ -169,6 +169,8 @@ for subject in subjects:
         df_beh["exp"].apply(cod_bloque_experimental)
     )
 
+    df_beh["subject"] = subject
+
     df_beh.to_csv(f'data/{subject}/df_beh_{subject}.csv')
 
     df_por_condicion = agrupar_por_condicion(df_beh,condicion)
@@ -190,7 +192,23 @@ for subject in subjects:
 
 df_all_subjects = pd.concat(list_dfs_all_subjects).drop("Unnamed: 0",axis=1)
 
-df_all_subjects.to_csv("data/df_all_subjects.csv")
+df_all_subjects.to_csv("data/df_all_subjects_por_condicion.csv")
+
+#%% Juntar todos los trials de los sujetos para hacer análisis
+
+carpeta = "data"
+subjects = [archivo for archivo in os.listdir(carpeta) if not archivo.endswith(".csv")]
+
+list_dfs_all_subjects = []
+
+for subject in subjects:
+    df_full_trials = pd.read_csv(f'data/{subject}/df_beh_{subject}.csv')
+
+    list_dfs_all_subjects.append(df_full_trials.copy())
+
+df_all_subjects = pd.concat(list_dfs_all_subjects).drop("Unnamed: 0",axis=1)
+
+df_all_subjects.to_csv("data/df_all_subjects_full_trials.csv")
 
 #%% Funcion para hacer descriptivo por condiciones
 
