@@ -26,10 +26,12 @@ ch_types[19] = 'ecg'
 carpeta = "datos_physio"
 subjects = [archivo for archivo in os.listdir(carpeta) if not archivo.endswith(".csv")]
 
+excluded_subjects = {"S4": "El canal de estímulo está roto"}
+
 list_dfs = []
 
 for subject in subjects:
-    if subject == "S4":
+    if subject in excluded_subjects.keys():
         continue
     
     # Cargar archivos fisiológicos
@@ -40,7 +42,7 @@ for subject in subjects:
 
     # Cargar archivos comportamentales y crear eventos
     df_beh = pd.read_csv(f"data/{subject}/df_beh_{subject}.csv").drop("Unnamed: 0",axis=1)
-    canal_stim = df_physio["EXT1"]
+    canal_stim = df_physio["estimulo"]
     event_conditions = ["estimulo"]*(524)
     events_dict = nk.events_find(canal_stim,
                              inter_min=440,
@@ -61,7 +63,25 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
     plt.legend()
     plt.show()
 
+#%% Estaría bueno primero separarlo por exp y después hacer esto
 
+list_dfs_eda = []
+for i, (df_physio, df_beh) in enumerate(list_dfs):
+    eda_clean = nk.eda_clean(df_physio["eda"], sampling_rate=512, method="BioSPPy")
+    df_eda = nk.eda_phasic(eda_clean, sampling_rate=512, method="highpass")
+    df_eda["EDA_Clean"] = eda_clean
+    df_eda["EDA_Raw"] = df_physio["eda"]
+    df_eda["subject"] = df_beh["subject"][0]
+    
+    plt.figure()
+    plt.plot(df_eda["EDA_Raw"], label="EDA Raw")
+    plt.plot(df_eda["EDA_Clean"], label="EDA Clean")
+    plt.legend()
+    plt.title(df_beh["subject"][0])
+    plt.show()
+    
+
+    list_dfs_eda.append(df_eda)
 #%%
 
 
