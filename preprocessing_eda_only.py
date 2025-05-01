@@ -126,6 +126,9 @@ def cvxEDA_pyEDA(y, delta, tau0=2., tau1=0.7, delta_knot=10., alpha=8e-4, gamma=
     return (np.array(a).ravel() for a in (r, p, t, l, d, e, obj))
 
 #%% Leer los datos 
+
+#!! Agregar de alguna forma que si ya se hizo el pre-procesamiento de ese
+#   sujeto entonces no lo vuelva a hacer
 carpeta = "datos_physio"
 subjects = [archivo for archivo in os.listdir(carpeta) if not archivo.endswith(".csv") and not archivo.endswith(".TXT")]
 
@@ -175,8 +178,15 @@ list_dfs_eda = []
 list_coefs_ajuste = []
 
 for i, (df_physio, df_beh) in enumerate(list_dfs):
+    # Verificamos que el sujeto no haya sido ya preprocesado
+    if os.path.exists(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_etiqueta.csv"):
+        print(f"Ya se procesó el sujeto {df_beh['subject'][0]}")
+        continue
+
     # Dividir el dataframe según df_beh.exp
     for j, exp in enumerate(df_beh["exp"].unique()):
+        print(f"Procesando sujeto {df_beh['subject'][0]} - {exp}")
+
         df_eda = pd.DataFrame()
         
         if j == 0:
@@ -189,11 +199,13 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
         
         # Extraemos features de EDA
         eda_clean = nk.eda_clean(df_exp["eda"], sampling_rate=256, method="BioSPPy")
-        df_eda["EDA_Phasic"], df_eda["SMNA"], df_eda["EDA_Tonic"],_,_, df_eda["error"], coef_ajuste = cvxEDA_pyEDA(eda_clean, delta=1/256)
         df_eda["EDA_Clean"] = eda_clean
 
-        # Está habiendo un tema de que los raws siempre que j = 1 es NaN
-        df_eda["EDA_Raw"] = df_exp["eda"]
+        df_eda["EDA_Phasic"], df_eda["SMNA"], df_eda["EDA_Tonic"],_,_, df_eda["error"], coef_ajuste = cvxEDA_pyEDA(eda_clean, delta=1/256)
+        df_eda["EDA_Phasic_normalized"] = nk.standardize(df_eda["EDA_Phasic"])
+        df_eda["EDA_Tonic_normalized"] = nk.standardize(df_eda["EDA_Tonic"])
+
+        df_eda["EDA_Raw"] = df_exp["eda"].reset_index().drop("index",axis=1)
         df_eda["subject"] = df_beh["subject"][0]
         df_eda["exp"] = exp
         
@@ -211,6 +223,6 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
 
         df_eda.to_csv(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_{exp}.csv", index=False)
 
-    pd.concat(list_dfs_eda).to_csv(f"datos_physio/eda_all_subjects_full_exps.csv", index=False)
+pd.concat(list_dfs_eda).to_csv(f"datos_physio/eda_all_subjects_full_exps.csv", index=False)
 
-# %%
+
