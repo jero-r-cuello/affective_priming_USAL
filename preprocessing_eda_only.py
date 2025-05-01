@@ -204,6 +204,11 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
         df_eda["EDA_Phasic"], df_eda["SMNA"], df_eda["EDA_Tonic"],_,_, df_eda["error"], coef_ajuste = cvxEDA_pyEDA(eda_clean, delta=1/256)
         df_eda["EDA_Phasic_normalized"] = nk.standardize(df_eda["EDA_Phasic"])
         df_eda["EDA_Tonic_normalized"] = nk.standardize(df_eda["EDA_Tonic"])
+        #!! La estandarización se hace por exp,
+        # pero capaz conviene hacerla por bloque así aislas
+        # más la señal de movimientos o artefactos inter-bloque
+        # En ese caso, debería hacerse en un segundo paso, y no ahora
+        #!! También hay que agregar un "EDA_Clean_normalized"
 
         df_eda["EDA_Raw"] = df_exp["eda"].reset_index().drop("index",axis=1)
         df_eda["subject"] = df_beh["subject"][0]
