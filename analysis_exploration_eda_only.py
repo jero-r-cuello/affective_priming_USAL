@@ -3,7 +3,31 @@ import pandas as pd
 import neurokit2 as nk
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 #%% Prueba de comparar EDA_Clean_normalized promedio, entre exps
+
+def test_frequency_before_cleaning(df, max_freq=0.3):
+    figures = {}
+    for subject, df_sub in df.groupby("subject"):
+        # Concatenar la señal cruda de todos los experimentos del sujeto
+        eda_raw = df_sub["EDA_Raw"].to_numpy(dtype=float)
+
+        # Calcular el espectro simpático con NeuroKit2
+        # show=True genera el gráfico automáticamente
+        _, info = nk.eda_sympathetic(
+            eda_raw,
+            sampling_rate=512,
+            frequency_band=[0.001, max_freq],
+            method="posada",
+            show=True
+        )
+
+        # Capturar la figura actual
+        fig = plt.gcf()
+        figures[subject] = fig
+
+    return figures
+
 
 def plot_avg_exp(df, señal, save=False):
     # Agrupar por sujeto y experimento
