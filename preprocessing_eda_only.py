@@ -141,9 +141,9 @@ for subject in subjects:
     if subject in excluded_subjects.keys():
         continue
 
-#    if os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_etiqueta.csv"):
-#        print(f"Ya se procesó el sujeto {subject}")
-#        continue
+    if os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_etiqueta.csv"):
+        print(f"Ya se procesó el sujeto {subject}")
+        continue
 
     
     # Cargar archivos fisiológicos
@@ -163,8 +163,8 @@ for subject in subjects:
 
     list_dfs.append((df_physio, df_beh))
 
-#%% Solo para verificar que los eventos están bien
-# Ploteo de los eventos
+#%% 
+# Ploteo de los eventos. Solo para verificar que los eventos están bien
 """
 for i, (df_physio, df_beh) in enumerate(list_dfs):
     plt.figure()
@@ -191,12 +191,14 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
         print(f"Procesando sujeto {df_beh['subject'][0]} - {exp}")
         
         if j == 0:
+            # Si es el primer experimento, tomamos los primeros 4 bloques
             onset_exp = df_beh[df_beh["exp"] == exp].onset.max()
             df_exp = df_physio.iloc[:int(onset_exp)+512]
             blocks_onsets = df_beh[df_beh["order"] == 0].onset.values[0:4]
             blocks_finish = df_beh[df_beh["order"] == 63].onset.values[0:4]
 
         else:
+            # Si es el segundo, tomamos los últimos 4
             onset_exp = df_beh[df_beh["exp"] == exp].onset.min()
             df_exp = df_physio.iloc[int(onset_exp)-512:]
             blocks_onsets = df_beh[df_beh["order"] == 0].onset.values[4:]
@@ -227,9 +229,18 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
             df_eda["exp"] = exp
             df_eda["bloque"] = bloque
             
+            # Plot para verificar
+            mask      = (df_beh["onset"] >= block_onset) & (df_beh["onset"] <= block_finish)
+            onsets_in = df_beh.loc[mask, "onset"]-block_onset
+
             plt.figure()
             plt.plot(df_eda["EDA_Raw"], label="EDA Raw")
             plt.plot(df_eda["EDA_Clean"], label="EDA Clean")
+            for onset in onsets_in:
+                plt.axvline(x=onset,
+                color="red",
+                linestyle=":",   
+                linewidth=1)
             plt.legend()
             plt.title(f'{df_beh["subject"][0]} - {exp}, B. {n+1}/4')
             plt.show()
@@ -244,7 +255,5 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
         df_eda_exp.to_csv(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_{exp}.csv", index=False)
 
 pd.concat(list_dfs_eda).to_csv(f"datos_physio/eda_all_subjects_full_exps.csv", index=False)
-
-
 
 # %%
