@@ -3,6 +3,8 @@ import pandas as pd
 import neurokit2 as nk
 import numpy as np
 import matplotlib.pyplot as plt
+%matplotlib qt
+
 import os
 #%% Prueba de comparar EDA_Clean_normalized promedio, entre exps
 

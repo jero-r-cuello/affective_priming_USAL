@@ -10,9 +10,9 @@ import neurokit2 as nk
 
 #%% Seleccionar el archivo que queres (WIP)
 # Leer los datos    
-data = np.loadtxt('datos_physio/S2/.txt')
+data = np.loadtxt('datos_physio/S2/Pre-Experimento-S2.TXT')
 df = pd.DataFrame(data)
-df_beh = pd.read_csv("df_beh_S2.csv").drop("Unnamed: 0",axis=1)
+df_beh = pd.read_csv("data/S2/df_beh_S2.csv").drop("Unnamed: 0",axis=1)
 
 # %% Crear un MNE.raw
 
@@ -40,6 +40,16 @@ scalings = {'eeg': 100, 'eog': 100}
 
 raw.plot(scalings=scalings)
 
+#%% Chequeo de filtros del dispositivo (pre-limpieza)
+ch_to_pick = ["pz"]
+picks = mne.pick_channels(raw.info["ch_names"], include=ch_to_pick)
+
+raw.plot_psd(picks=picks)
+
+ch_to_pick = ["p3"]
+picks = mne.pick_channels(raw.info["ch_names"], include=ch_to_pick)
+
+raw.plot_psd(picks=picks)
 # %% Probando eventos a partir de marcadores
 
 canal_stim = raw_nk["EXT1"]

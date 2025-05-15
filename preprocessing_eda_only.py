@@ -127,8 +127,6 @@ def cvxEDA_pyEDA(y, delta, tau0=2., tau1=0.7, delta_knot=10., alpha=8e-4, gamma=
 
 #%% Leer los datos 
 
-#!! Agregar de alguna forma que si ya se hizo el pre-procesamiento de ese
-#   sujeto entonces no lo vuelva a hacer
 carpeta = "datos_physio"
 subjects = [archivo for archivo in os.listdir(carpeta) if not archivo.endswith(".csv") and not archivo.endswith(".TXT")]
 
@@ -142,6 +140,11 @@ list_dfs = []
 for subject in subjects:
     if subject in excluded_subjects.keys():
         continue
+
+#    if os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_etiqueta.csv"):
+#        print(f"Ya se procesó el sujeto {subject}")
+#        continue
+
     
     # Cargar archivos fisiológicos
     archivo_txt = [archivo for archivo in os.listdir(f'datos_physio/{subject}') if archivo.endswith(".TXT") and "resting" not in archivo.lower()][0]
@@ -162,7 +165,7 @@ for subject in subjects:
 
 #%% Solo para verificar que los eventos están bien
 # Ploteo de los eventos
-
+"""
 for i, (df_physio, df_beh) in enumerate(list_dfs):
     plt.figure()
     plt.plot(df_physio.eda, label=df_beh["subject"][0])
@@ -171,8 +174,8 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
     plt.title(df_beh["subject"][0])
     plt.legend()
     plt.show()
-
-#%% EDA - Extracción de features
+"""
+# EDA - Extracción de features
 
 list_dfs_eda = []
 list_coefs_ajuste = []
@@ -186,48 +189,62 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
     # Dividir el dataframe según df_beh.exp
     for j, exp in enumerate(df_beh["exp"].unique()):
         print(f"Procesando sujeto {df_beh['subject'][0]} - {exp}")
-
-        df_eda = pd.DataFrame()
         
         if j == 0:
             onset_exp = df_beh[df_beh["exp"] == exp].onset.max()
-            df_exp = df_physio.iloc[:int(onset_exp)+500]
+            df_exp = df_physio.iloc[:int(onset_exp)+512]
+            blocks_onsets = df_beh[df_beh["order"] == 0].onset.values[0:4]
+            blocks_finish = df_beh[df_beh["order"] == 63].onset.values[0:4]
 
         else:
             onset_exp = df_beh[df_beh["exp"] == exp].onset.min()
-            df_exp = df_physio.iloc[int(onset_exp)-500:]
-        
-        # Extraemos features de EDA
-        eda_clean = nk.eda_clean(df_exp["eda"], sampling_rate=256, method="BioSPPy")
-        df_eda["EDA_Clean"] = eda_clean
+            df_exp = df_physio.iloc[int(onset_exp)-512:]
+            blocks_onsets = df_beh[df_beh["order"] == 0].onset.values[4:]
+            blocks_finish = df_beh[df_beh["order"] == 63].onset.values[4:]
+            
+        list_dfs_blocks = []
+        for n in range(4):
+            df_eda = pd.DataFrame()
 
-        df_eda["EDA_Phasic"], df_eda["SMNA"], df_eda["EDA_Tonic"],_,_, df_eda["error"], coef_ajuste = cvxEDA_pyEDA(eda_clean, delta=1/256)
-        df_eda["EDA_Phasic_normalized"] = nk.standardize(df_eda["EDA_Phasic"])
-        df_eda["EDA_Tonic_normalized"] = nk.standardize(df_eda["EDA_Tonic"])
-        #!! La estandarización se hace por exp,
-        # pero capaz conviene hacerla por bloque así aislas
-        # más la señal de movimientos o artefactos inter-bloque
-        # En ese caso, debería hacerse en un segundo paso, y no ahora
-        #!! También hay que agregar un "EDA_Clean_normalized"
+            print(f'Procesando bloque {n+1}/4')
+            # Extraemos el bloque
+            bloque = n
+            block_onset = blocks_onsets[n]
+            block_finish = blocks_finish[n]
 
-        df_eda["EDA_Raw"] = df_exp["eda"].reset_index().drop("index",axis=1)
-        df_eda["subject"] = df_beh["subject"][0]
-        df_eda["exp"] = exp
-        
-        plt.figure()
-        plt.plot(df_eda["EDA_Raw"], label="EDA Raw")
-        plt.plot(df_eda["EDA_Clean"], label="EDA Clean")
-        plt.legend()
-        plt.title(f'{df_beh["subject"][0]} - {exp}')
-        plt.show()
-        
-        print(f'Coef. de ajuste {df_beh["subject"][0]} - {exp}: {coef_ajuste}')
+            df_bloque = df_exp.loc[int(block_onset)-512:int(block_finish)+512]
 
-        list_coefs_ajuste.append(coef_ajuste)
-        list_dfs_eda.append(df_eda)
+            # Extraemos features de EDA
+            eda_clean = nk.eda_clean(df_bloque["eda"], sampling_rate=256, method="BioSPPy")
+            df_eda["EDA_Clean"] = eda_clean
 
-        df_eda.to_csv(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_{exp}.csv", index=False)
+            df_eda["EDA_Phasic"], df_eda["SMNA"], df_eda["EDA_Tonic"],_,_, df_eda["error"], coef_ajuste = cvxEDA_pyEDA(eda_clean, delta=1/256)
+            df_eda["EDA_Phasic_normalized"] = nk.standardize(df_eda["EDA_Phasic"])
+            df_eda["EDA_Tonic_normalized"] = nk.standardize(df_eda["EDA_Tonic"])
+
+            df_eda["EDA_Raw"] = df_bloque["eda"].reset_index().drop("index",axis=1)
+            df_eda["subject"] = df_beh["subject"][0]
+            df_eda["exp"] = exp
+            df_eda["bloque"] = bloque
+            
+            plt.figure()
+            plt.plot(df_eda["EDA_Raw"], label="EDA Raw")
+            plt.plot(df_eda["EDA_Clean"], label="EDA Clean")
+            plt.legend()
+            plt.title(f'{df_beh["subject"][0]} - {exp}, B. {n+1}/4')
+            plt.show()
+            
+            print(f'Coef. de ajuste: {coef_ajuste}')
+
+            list_coefs_ajuste.append(coef_ajuste)
+            list_dfs_blocks.append(df_eda)
+
+        df_eda_exp = pd.concat(list_dfs_blocks)
+        list_dfs_eda.append(df_eda_exp)
+        df_eda_exp.to_csv(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_{exp}.csv", index=False)
 
 pd.concat(list_dfs_eda).to_csv(f"datos_physio/eda_all_subjects_full_exps.csv", index=False)
 
 
+
+# %%
