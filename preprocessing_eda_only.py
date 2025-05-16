@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import mne
 import neurokit2 as nk
 import cvxopt as cv
+from termcolor import colored
 
 #%% Configuración de los canales
 info_canales = pd.read_excel("Informacion canales eeg (mapa canales).xlsx")
@@ -142,7 +143,7 @@ for subject in subjects:
         continue
 
     if os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_etiqueta.csv"):
-        print(f"Ya se procesó el sujeto {subject}")
+        print(colored(f"Ya se procesó el sujeto {subject}","green"))
         continue
 
     
@@ -164,17 +165,6 @@ for subject in subjects:
     list_dfs.append((df_physio, df_beh))
 
 #%% 
-# Ploteo de los eventos. Solo para verificar que los eventos están bien
-"""
-for i, (df_physio, df_beh) in enumerate(list_dfs):
-    plt.figure()
-    plt.plot(df_physio.eda, label=df_beh["subject"][0])
-    for n in range(len(df_beh["onset"])):
-        plt.axvline(x=df_beh["onset"][n], color='red', linestyle='--', linewidth=2)
-    plt.title(df_beh["subject"][0])
-    plt.legend()
-    plt.show()
-"""
 # EDA - Extracción de features
 
 list_dfs_eda = []
@@ -183,12 +173,12 @@ list_coefs_ajuste = []
 for i, (df_physio, df_beh) in enumerate(list_dfs):
     # Verificamos que el sujeto no haya sido ya preprocesado
     if os.path.exists(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_etiqueta.csv"):
-        print(f"Ya se procesó el sujeto {df_beh['subject'][0]}")
+        print(colored(f"Ya se procesó el sujeto {df_beh['subject'][0]}","green"))
         continue
 
     # Dividir el dataframe según df_beh.exp
     for j, exp in enumerate(df_beh["exp"].unique()):
-        print(f"Procesando sujeto {df_beh['subject'][0]} - {exp}")
+        print(colored(f"Procesando sujeto {df_beh['subject'][0]} - {exp}","yellow"))
         
         if j == 0:
             # Si es el primer experimento, tomamos los primeros 4 bloques
@@ -208,7 +198,7 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
         for n in range(4):
             df_eda = pd.DataFrame()
 
-            print(f'Procesando bloque {n+1}/4')
+            print(colored(f'Procesando bloque {n+1}/4',"light_red"))
             # Extraemos el bloque
             bloque = n
             block_onset = blocks_onsets[n]
@@ -219,6 +209,7 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
             # Extraemos features de EDA
             eda_clean = nk.eda_clean(df_bloque["eda"], sampling_rate=256, method="BioSPPy")
             df_eda["EDA_Clean"] = eda_clean
+            df_eda["EDA_Clean_normalized"] = nk.standardize(df_eda["EDA_Clean"])
 
             df_eda["EDA_Phasic"], df_eda["SMNA"], df_eda["EDA_Tonic"],_,_, df_eda["error"], coef_ajuste = cvxEDA_pyEDA(eda_clean, delta=1/256)
             df_eda["EDA_Phasic_normalized"] = nk.standardize(df_eda["EDA_Phasic"])
@@ -227,10 +218,10 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
             df_eda["EDA_Raw"] = df_bloque["eda"].reset_index().drop("index",axis=1)
             df_eda["subject"] = df_beh["subject"][0]
             df_eda["exp"] = exp
-            df_eda["bloque"] = bloque
+            df_eda["block"] = bloque
             
             # Plot para verificar
-            mask      = (df_beh["onset"] >= block_onset) & (df_beh["onset"] <= block_finish)
+            mask = (df_beh["onset"] >= block_onset) & (df_beh["onset"] <= block_finish)
             onsets_in = df_beh.loc[mask, "onset"]-block_onset
 
             plt.figure()
@@ -243,9 +234,10 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
                 linewidth=1)
             plt.legend()
             plt.title(f'{df_beh["subject"][0]} - {exp}, B. {n+1}/4')
+            plt.savefig(f"plots/pre-processing/eda_raw_vs_clean_{df_beh['subject'][0]}_{exp}_bloque{n+1}.png")
             plt.show()
             
-            print(f'Coef. de ajuste: {coef_ajuste}')
+            print(colored(f'Coef. de ajuste: {coef_ajuste}',"magenta"))
 
             list_coefs_ajuste.append(coef_ajuste)
             list_dfs_blocks.append(df_eda)
@@ -254,6 +246,10 @@ for i, (df_physio, df_beh) in enumerate(list_dfs):
         list_dfs_eda.append(df_eda_exp)
         df_eda_exp.to_csv(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_{exp}.csv", index=False)
 
-pd.concat(list_dfs_eda).to_csv(f"datos_physio/eda_all_subjects_full_exps.csv", index=False)
+try:
+    pd.concat(list_dfs_eda).to_csv(f"datos_physio/eda_all_subjects_full_exps.csv", index=False)
+
+except ValueError:
+    print(colored("No se puede concatenar, probablemente lista vacía","red"))
 
 # %%
