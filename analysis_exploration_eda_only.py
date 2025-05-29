@@ -355,7 +355,120 @@ def scr_event_analysis(df, df_beh, condicion, stimuli_channel='stimuli'):
     print(colored(f"p-value: {p_val}", "yellow"))
 
     return test_name, t_stat, p_val, bool_normality, bool_var
-                      
+
+def _remove_outliers(s, k=1.5):
+    """Devuelve la serie sin outliers (regla IQR·k)."""
+    q1, q3 = np.percentile(s, [25, 75])
+    iqr = q3 - q1
+    lower, upper = q1 - k * iqr, q3 + k * iqr
+    return s[(s >= lower) & (s <= upper)]
+
+def eda_interval_analysis(df, remove_outliers=True, show=False, save=False):
+    df_features_list = []
+
+    # Bucle por agrupaciones
+    for (subj, exp, blk), grp in df.groupby(["subject", "exp", "block"]):
+        nk_features = nk.eda_intervalrelated(
+            grp,
+            sampling_rate=256,
+        )
+
+        nk_features["EDA_Phasic_Mean"] = grp["EDA_Phasic_normalized"].mean()
+        nk_features["EDA_Tonic_Mean"] = grp["EDA_Tonic_normalized"].mean()
+        nk_features["SMNA_Mean"] = grp["SMNA"].mean()
+        nk_features["SMNA_Median"] = grp["SMNA"].median()
+
+        nk_features["subject"] = subj
+        nk_features["exp"] = exp
+        nk_features["block"] = blk
+
+        # Guardar en la lista
+        df_features_list.append(nk_features)
+
+    features_df = pd.concat(df_features_list, ignore_index=True)
+
+    exclude_cols = {"subject", "exp", "block"}
+    numeric_feats = [c for c in features_df.columns
+                     if features_df[c].dtype != "O" and c not in exclude_cols]
+
+    # separar en los dos grupos
+    levels = features_df["exp"].unique()
+
+    g1_name, g2_name = levels
+    g1, g2 = (features_df[features_df['exp'] == g1_name],
+              features_df[features_df['exp'] == g2_name])
+
+    stats_rows = []
+    for feat in numeric_feats:
+        x, y = g1[feat].dropna(), g2[feat].dropna()
+        if remove_outliers:
+            x = _remove_outliers(x)
+            y = _remove_outliers(y)
+
+        n_x, n_y = len(x), len(y)
+
+        # Estandarizar para probar contra N(0,1)
+        zx = (x - x.mean()) / x.std(ddof=1)
+        zy = (y - y.mean()) / y.std(ddof=1)
+        norm_x_p = stats.kstest(zx, "norm").pvalue
+        norm_y_p = stats.kstest(zy, "norm").pvalue
+        normal = (norm_x_p > 0.05) and (norm_y_p > 0.05)
+
+        # Test de homogeneidad de varianzas
+        lev_p = stats.levene(x, y, center="median").pvalue
+        equal_var = lev_p > 0.05
+
+        if normal:
+            test_name = "t-test"
+            stat, p = stats.ttest_ind(x, y, equal_var=equal_var)
+        else:
+            test_name = "Mann-Whitney U"
+            stat, p   = stats.mannwhitneyu(x, y, alternative="two-sided")
+
+        stats_rows.append({
+            "Feature": feat,
+            "Test": test_name,
+            "n_g1": n_x,
+            "n_g2": n_y, 
+            "KS_g1_p": round(norm_x_p, 3),
+            "KS_g2_p": round(norm_y_p, 3),
+            "EqualVar_p": round(lev_p, 3),
+            "Statistic": round(stat, 3),
+            "p_value": round(p, 4),
+            "Significant": "yes" if p < 0.05 else "no"
+        })
+
+        # ---------- Gráfico opcional ----------
+        if show:
+            if remove_outliers:
+                plt.figure(figsize=(4, 4))
+                # DataFrame solo con los valores filtrados
+                df_plot = pd.concat([
+                    pd.DataFrame({"exp": g1_name, feat: x}),
+                    pd.DataFrame({"exp": g2_name, feat: y})
+                ])
+                sns.boxplot(data=df_plot, x="exp", y=feat, showfliers=False)
+                sns.stripplot(data=df_plot, x="exp", y=feat,
+                              color="black", size=3, jitter=0.2, alpha=0.5)
+            else:
+                plt.figure(figsize=(4, 4))
+                sns.boxplot(data=features_df, x="exp", y=feat)  # fliers por defecto
+                sns.stripplot(data=features_df, x="exp", y=feat,
+                              color="black", size=3, jitter=0.2, alpha=0.5)
+
+            plt.title(f"{feat} – {test_name}\n p = {p:.4f}")
+            plt.tight_layout()
+            if save:
+                if remove_outliers:
+                    plt.savefig(f"plots/diff_test_between_exps/{test_name}_{feat}_wo-outliers.png")
+                
+                else:
+                    plt.savefig(f"plots/diff_test_between_exps/{test_name}_{feat}.png")
+            plt.show()
+
+    stats_df = pd.DataFrame(stats_rows)
+    return features_df, stats_df
+
 #%%
 # Definir señal a graficar y cargar datos
 señal = ['EDA_Phasic']
@@ -368,5 +481,7 @@ plot_avg_exp(df, señal)
 
 plot_each_block_by_subject(df, señal)
 
-scr_event_analysis(df, df_beh, condicion)
+scr_event_analysis(df, df_beh, condicion=condicion)
+
+eda_interval_analysis(df, remove_outliers=True, plot=True, save=False)
 # %%
