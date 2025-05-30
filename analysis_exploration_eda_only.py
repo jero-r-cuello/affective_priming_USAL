@@ -251,16 +251,23 @@ def check_markers_by_block(df, stimuli_channel='stimuli'):
                 num_markers = len(eventos['onset'])
 
                 print(f"Sujeto {subject}, Exp {exp}, Bloque {block+1}: {num_markers} marcadores")
-                
+
+def _remove_outliers(s, k=1.5):
+    """Devuelve la serie sin outliers (regla IQR·k)."""
+    q1, q3 = np.percentile(s, [25, 75])
+    iqr = q3 - q1
+    lower, upper = q1 - k * iqr, q3 + k * iqr
+    return s[(s >= lower) & (s <= upper)]
+
 #WIP 
-def scr_event_analysis(df, df_beh, condicion, stimuli_channel='stimuli'):
+def scr_event_analysis(df, df_beh, condicion, remove_outliers=False, show=False, save=False, stimuli_channel='stimuli'):
     """
     Realiza un análisis de eventos en la señal especificada.
     Primero se extraen las características de SCR por evento,
     luego se realizan pruebas estadísticas para comparar.
 
     OJO: 
-    Funciona solo para SCR_Peak_Amplitude y con una sola condición.
+    Funciona con una sola condición a la vez.
     Actualizar en un futuro.
     """
 
@@ -304,64 +311,98 @@ def scr_event_analysis(df, df_beh, condicion, stimuli_channel='stimuli'):
                 features['SCR_RiseTime'] = features['SCR_RiseTime'].fillna(0)
                 features['SCR_RecoveryTime'] = features['SCR_RecoveryTime'].fillna(0)
 
+                #!! Ojo porque esto capaz convendría hacerlo por sujeto y no por bloque                
+                # ------------------------------------------------------
+                # ⭐ Z‑scores antes de concatenar
+                # ------------------------------------------------------
+                num_cols = features.select_dtypes(include=[np.number]).columns
+                features[num_cols] = features[num_cols].apply(
+                    stats.zscore, nan_policy="omit"
+                )
+                
                 all_features = pd.concat([all_features, features], axis=0)
 
-    #!! ACÁ SE VIENE LA PARTE ESTADÍSTICA
-    #!! HABRÍA QUE MODIFICAR PARA QUE SE PUEDA HACER CON DIFERENTES
-    #!! FEATURES, PORQUE ESTÁ HECHO NO MÁS PARA SCR_PEAK_AMPLITUDE
-    #!! Las muestras serían pareadas??? o independientes???
-    #!! OJO QUE NO ESTÁ SEPARADO POR EXPERIMENTO, JUNTA TODO
-    # Separo por condición
-    features_by_condition = all_features.groupby('Condition')
-    features_by_condition_list = []
+    # ------------------------------------------------------------------
+    # Comparación estadística
+    # ------------------------------------------------------------------
+    group_names = all_features["Condition"].unique()
+    if len(group_names) != 2:
+        raise ValueError("Se requieren exactamente dos niveles en 'Condition'.")
+    g1_name, g2_name = group_names
 
-    # Agarro los eventos de cada condición
-    for condicion in all_features['Condition'].unique():
-        features_by_condition_list.append(features_by_condition.get_group(condicion))
-    condition_1 = features_by_condition_list[0]["SCR_Peak_Amplitude"]
-    condition_2 = features_by_condition_list[1]["SCR_Peak_Amplitude"]
+    resultados = []
 
-    # Chequeamos normalidad de cada condición
-    #!! Quizás no sea necesario, por el Teorema del Límite Central
-    normality = []
+    # Saco eda_scr porque los valores son 1 y 0 (si hay o no hay pico en la época)
+    #!! Habría que hacer un análisis aparte para eso
+    for feat in [c for c in all_features.columns if c not in ["Label", "Condition", "Event", "Event_Onset", "EDA_SCR"]]:
+        x = all_features.loc[all_features["Condition"] == g1_name, feat].astype(float)
+        y = all_features.loc[all_features["Condition"] == g2_name, feat].astype(float)
 
-    cond_1_normality = pg.normality(condition_1).normal.values
-    cond_2_normality = pg.normality(condition_2).normal.values
-    bool_normality = cond_1_normality and cond_2_normality
-    
-    # Chequeamos homogeneidad de varianzas
-    p_var = levene(condition_1, condition_2).pvalue
-    bool_var = p_var >= 0.05
+        #!! La función _remove_outliers no funcionó con esta función,
+        #!! No sé por qué. Hay que modificarlo
+        if remove_outliers:
+            x = _remove_outliers(x)
+            y = _remove_outliers(y)
 
-    # Chequeamos si hay diferencias entre condiciones
-    # Elegimos el test según los resultados de normalidad y homogeneidad
-    if bool_normality and bool_var:
-        # Test t de Student
-        t_stat, p_val = stats.ttest_ind(condition_1, condition_2)
-        test_name = "t-test"
-    elif not bool_normality and bool_var:
-        # Test de Welch
-        t_stat, p_val = stats.ttest_ind(condition_1, condition_2, equal_var=False)
-        test_name = "Welch's t-test"
-    elif not bool_normality and not bool_var:
-        # Test de Wilcoxon
-        t_stat, p_val = wilcoxon(condition_1, condition_2)
-        test_name = "Wilcoxon signed-rank test"
-    else:
-        raise ValueError("No se puede determinar el test a utilizar.")
+        x, y = x.dropna(), y.dropna()
+        n1, n2 = len(x), len(y)
 
-    print(colored(f"Test: {test_name}", "yellow"))
-    print(colored(f"t-statistic: {t_stat}", "yellow"))
-    print(colored(f"p-value: {p_val}", "yellow"))
+        # Supuestos
+        shapiro_p1 = stats.shapiro(x).pvalue if n1 >= 3 else np.nan
+        shapiro_p2 = stats.shapiro(y).pvalue if n2 >= 3 else np.nan
+        levene_stat, levene_p = stats.levene(x, y, center="mean")
 
-    return test_name, t_stat, p_val, bool_normality, bool_var
+        normal_both = (shapiro_p1 > 0.05) and (shapiro_p2 > 0.05)
+        homoscedastic = levene_p > 0.05
 
-def _remove_outliers(s, k=1.5):
-    """Devuelve la serie sin outliers (regla IQR·k)."""
-    q1, q3 = np.percentile(s, [25, 75])
-    iqr = q3 - q1
-    lower, upper = q1 - k * iqr, q3 + k * iqr
-    return s[(s >= lower) & (s <= upper)]
+        # Selección de test
+        if normal_both:
+            if homoscedastic:
+                test_stat, p_val = stats.ttest_ind(x, y, equal_var=True)
+                test_name = "t-test"
+            else:
+                test_stat, p_val = stats.ttest_ind(x, y, equal_var=False)
+                test_name = "Welch"
+        else:
+            test_stat, p_val = stats.mannwhitneyu(x, y, alternative="two-sided")
+            test_name = "Mann-Whitney U"
+
+        resultados.append(
+            {
+                "Feature": feat,
+                "Test": test_name,
+                "n_g1": n1,
+                "n_g2": n2,
+                "shapiro_p_g1": shapiro_p1,
+                "shapiro_p_g2": shapiro_p2,
+                "EqualVar_p": levene_p,
+                "Statistic": test_stat,
+                "p_value": p_val,
+                "Significant": "yes" if p_val < 0.05 else "no"
+            }
+        )
+
+        if show:
+            df_plot = pd.concat(
+                [
+                    pd.DataFrame({condicion: g1_name, feat: x}),
+                    pd.DataFrame({condicion: g2_name, feat: y}),
+                ]
+            )
+            plt.figure(figsize=(4, 4))
+            sns.boxplot(data=df_plot, x=condicion, y=feat, showfliers=not remove_outliers)
+            sns.stripplot(
+                data=df_plot, x=condicion, y=feat, color="black", size=3, jitter=0.2, alpha=0.5
+            )
+            plt.title(f"{feat} – {test_name} - {condicion} \n p = {p_val:.4f}")
+            plt.tight_layout()
+            if save:
+                suffix = "_wo-outliers" if remove_outliers else ""
+                plt.savefig(f'plots/diff_test_between_epochs/{test_name}_{feat}{suffix}.png', dpi=300)
+
+            plt.show()
+            
+    return pd.DataFrame(resultados)
 
 def eda_interval_analysis(df, remove_outliers=True, show=False, save=False):
     df_features_list = []
@@ -395,8 +436,7 @@ def eda_interval_analysis(df, remove_outliers=True, show=False, save=False):
     levels = features_df["exp"].unique()
 
     g1_name, g2_name = levels
-    g1, g2 = (features_df[features_df['exp'] == g1_name],
-              features_df[features_df['exp'] == g2_name])
+    g1, g2 = (features_df[features_df['exp'] == g1_name], features_df[features_df['exp'] == g2_name])
 
     stats_rows = []
     for feat in numeric_feats:
@@ -474,7 +514,9 @@ def eda_interval_analysis(df, remove_outliers=True, show=False, save=False):
 señal = ['EDA_Phasic']
 df = pd.read_csv("datos_physio/eda_all_subjects_full_exps.csv")
 df_beh = pd.read_csv("data/df_all_subjects_full_trials.csv")
-condicion = 'congruente' #['valencia_palabra', 'valencia_rostro', 'arousal_palabra', 'rostro_sexo']
+condiciones =  ['congruente', 'valencia_palabra', 'valencia_rostro', 
+                'arousal_palabra', 'rostro_sexo']
+condicion = condiciones[0]  # Cambiar según la condición que se quiera analizar
 
 plot_exps_by_subject(df, señal)
 plot_avg_exp(df, señal)
