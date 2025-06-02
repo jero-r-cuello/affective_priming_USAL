@@ -126,7 +126,151 @@ def cvxEDA_pyEDA(y, delta, tau0=2., tau1=0.7, delta_knot=10., alpha=8e-4, gamma=
 
     return (np.array(a).ravel() for a in (r, p, t, l, d, e, obj))
 
-#%% Leer los datos 
+# Función para preprocesar los sujetos
+def preprocess_subjects(subjects, excluded_subjects, new_pipeline):
+    """
+    Preprocesa los sujetos excluyendo los que están en excluded_subjects.
+    Si new_pipeline es True, procesa todos los sujetos, si es False, solo los que no tienen el csv de salida.
+    """
+    if not os.path.exists("datos_physio"):
+        os.makedirs("datos_physio")
+    
+    if not os.path.exists("plots/pre-processing"):
+        os.makedirs("plots/pre-processing")
+    list_dfs = []
+
+    for subject in subjects:
+        if subject in excluded_subjects.keys():
+            continue
+        
+        if not new_pipeline:
+            # Verificamos que el sujeto no haya sido ya preprocesado
+            if os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_etiqueta.csv"):
+                print(colored(f"Ya se procesó el sujeto {subject}","green"))
+                continue
+
+        
+        # Cargar archivos fisiológicos
+        archivo_txt = [archivo for archivo in os.listdir(f'datos_physio/{subject}') if archivo.endswith(".TXT") and "resting" not in archivo.lower()][0]
+        data = np.loadtxt(f'{carpeta}/{subject}/{archivo_txt}')
+        df_physio = pd.DataFrame(data).T
+        df_physio.columns = ch_names
+
+        # Cargar archivos comportamentales y crear eventos
+        df_beh = pd.read_csv(f"data/{subject}/df_beh_{subject}.csv").drop("Unnamed: 0",axis=1)
+        canal_stim = df_physio["estimulo"]
+        event_conditions = ["estimulo"]*(524)
+        events_dict = nk.events_find(canal_stim,
+                                inter_min=440,
+                                event_conditions=event_conditions)
+        df_beh["onset"] = events_dict["onset"][12:] # Descartamos los de práctica
+
+        list_dfs.append((df_physio, df_beh))
+
+
+    # EDA - Extracción de features
+    list_dfs_eda = []
+    list_coefs_ajuste = []
+
+    for i, (df_physio, df_beh) in enumerate(list_dfs):
+        if not new_pipeline:
+            # Verificamos que el sujeto no haya sido ya preprocesado
+            if os.path.exists(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_etiqueta.csv"):
+                print(colored(f"Ya se procesó el sujeto {df_beh['subject'][0]}","green"))
+                continue
+
+        # Dividir el dataframe según df_beh.exp
+        for j, exp in enumerate(df_beh["exp"].unique()):
+            print(colored(f"Procesando sujeto {df_beh['subject'][0]} - {exp}","yellow"))
+            
+            if j == 0:
+                # Si es el primer experimento, tomamos los primeros 4 bloques
+                onset_exp = df_beh[df_beh["exp"] == exp].onset.max()
+                df_exp = df_physio.iloc[:int(onset_exp)+512]
+                blocks_onsets = df_beh[df_beh["order"] == 0].onset.values[0:4]
+                blocks_finish = df_beh[df_beh["order"] == 63].onset.values[0:4]
+
+            else:
+                # Si es el segundo, tomamos los últimos 4
+                onset_exp = df_beh[df_beh["exp"] == exp].onset.min()
+                df_exp = df_physio.iloc[int(onset_exp)-512:]
+                blocks_onsets = df_beh[df_beh["order"] == 0].onset.values[4:]
+                blocks_finish = df_beh[df_beh["order"] == 63].onset.values[4:]
+                
+            list_dfs_blocks = []
+            for n in range(4):
+                df_eda = pd.DataFrame()
+
+                print(colored(f'Procesando bloque {n+1}/4',"light_red"))
+                # Extraemos el bloque
+                bloque = n
+                block_onset = blocks_onsets[n]
+                block_finish = blocks_finish[n]
+
+                df_bloque = df_exp.loc[int(block_onset)-512:int(block_finish)+512]
+
+                # Extraemos features de EDA
+                eda_clean = nk.eda_clean(df_bloque["eda"], sampling_rate=256, method="BioSPPy")
+                df_eda["EDA_Raw"] = df_bloque["eda"].reset_index().drop("index",axis=1)
+                df_eda["EDA_Clean"] = eda_clean
+                df_eda["EDA_Clean_normalized"] = nk.standardize(df_eda["EDA_Clean"])
+
+                df_eda["EDA_Phasic"], df_eda["SMNA"], df_eda["EDA_Tonic"],_,_, df_eda["error"], coef_ajuste = cvxEDA_pyEDA(eda_clean, delta=1/256)
+                df_eda["EDA_Phasic_normalized"] = nk.standardize(df_eda["EDA_Phasic"])
+                df_eda["EDA_Tonic_normalized"] = nk.standardize(df_eda["EDA_Tonic"])
+
+                #!! Habría que revisar los parámetros y el método de detección de picos
+                peaks, info = nk.eda_peaks(df_eda["EDA_Phasic_normalized"], # Peaks a partir de los datos normalizados por bloque y por sujeto
+                            sampling_rate=256,
+                            method="kim2004",
+                            amplitude_min=0.05) # Bastante flexible!!
+                
+                df_eda["SCR_Onsets"] = peaks["SCR_Onsets"]
+                df_eda["SCR_Peaks"] = peaks["SCR_Peaks"]
+                df_eda["SCR_Height"] = peaks["SCR_Height"]
+                df_eda["SCR_Amplitude"] = peaks["SCR_Amplitude"]
+                df_eda["SCR_RiseTime"] = peaks["SCR_RiseTime"]
+                df_eda["SCR_Recovery"] = peaks["SCR_Recovery"]
+                df_eda["SCR_RecoveryTime"] = peaks["SCR_RecoveryTime"]
+
+                df_eda["subject"] = df_beh["subject"][0]
+                df_eda["exp"] = exp
+                df_eda["block"] = bloque
+                df_eda["stimuli"] = df_bloque["estimulo"].reset_index().drop("index",axis=1)
+                
+                # Plot para verificar
+                mask = (df_beh["onset"] >= block_onset) & (df_beh["onset"] <= block_finish)
+                onsets_in = df_beh.loc[mask, "onset"]-block_onset
+
+                plt.figure()
+                plt.plot(df_eda["EDA_Raw"], label="EDA Raw")
+                plt.plot(df_eda["EDA_Clean"], label="EDA Clean")
+                for onset in onsets_in:
+                    plt.axvline(x=onset,
+                    color="red",
+                    linestyle=":",   
+                    linewidth=1)
+                plt.legend()
+                plt.title(f'{df_beh["subject"][0]} - {exp}, B. {n+1}/4')
+                plt.savefig(f"plots/pre-processing/eda_raw_vs_clean_{df_beh['subject'][0]}_{exp}_bloque{n+1}.png")
+                plt.show()
+                
+                print(colored(f'Coef. de ajuste: {coef_ajuste}',"magenta"))
+
+                list_coefs_ajuste.append(coef_ajuste)
+                list_dfs_blocks.append(df_eda)
+
+            df_eda_exp = pd.concat(list_dfs_blocks)
+            list_dfs_eda.append(df_eda_exp)
+            df_eda_exp.to_csv(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_{exp}.csv", index=False)
+
+    try:
+        pd.concat(list_dfs_eda).to_csv(f"datos_physio/eda_all_subjects_full_exps.csv", index=False)
+
+    except ValueError:
+        print(colored("No se puede concatenar, probablemente lista vacía","red"))
+
+#%% Leer los datos y preprocesarlos
 
 carpeta = "datos_physio"
 subjects = [archivo for archivo in os.listdir(carpeta) if not archivo.endswith(".csv") and not archivo.endswith(".TXT")]
@@ -137,136 +281,4 @@ excluded_subjects = {"S4": "El canal de estímulo está roto",
                      "S2": "Se sacó el scr a mitad del exp 1",
                      "S1": "No hay datos, creo que este solo fue una prueba"}
 
-list_dfs = []
-
-for subject in subjects:
-    if subject in excluded_subjects.keys():
-        continue
-    
-    if not new_pipeline:
-        # Verificamos que el sujeto no haya sido ya preprocesado
-        if os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{subject}/df_eda_{subject}_etiqueta.csv"):
-            print(colored(f"Ya se procesó el sujeto {subject}","green"))
-            continue
-
-    
-    # Cargar archivos fisiológicos
-    archivo_txt = [archivo for archivo in os.listdir(f'datos_physio/{subject}') if archivo.endswith(".TXT") and "resting" not in archivo.lower()][0]
-    data = np.loadtxt(f'{carpeta}/{subject}/{archivo_txt}')
-    df_physio = pd.DataFrame(data).T
-    df_physio.columns = ch_names
-
-    # Cargar archivos comportamentales y crear eventos
-    df_beh = pd.read_csv(f"data/{subject}/df_beh_{subject}.csv").drop("Unnamed: 0",axis=1)
-    canal_stim = df_physio["estimulo"]
-    event_conditions = ["estimulo"]*(524)
-    events_dict = nk.events_find(canal_stim,
-                             inter_min=440,
-                             event_conditions=event_conditions)
-    df_beh["onset"] = events_dict["onset"][12:]
-
-    list_dfs.append((df_physio, df_beh))
-
-
-# EDA - Extracción de features
-list_dfs_eda = []
-list_coefs_ajuste = []
-
-for i, (df_physio, df_beh) in enumerate(list_dfs):
-    if not new_pipeline:
-        # Verificamos que el sujeto no haya sido ya preprocesado
-        if os.path.exists(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_emocionalmente_activantes.csv") and os.path.exists(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_etiqueta.csv"):
-            print(colored(f"Ya se procesó el sujeto {df_beh['subject'][0]}","green"))
-            continue
-
-    # Dividir el dataframe según df_beh.exp
-    for j, exp in enumerate(df_beh["exp"].unique()):
-        print(colored(f"Procesando sujeto {df_beh['subject'][0]} - {exp}","yellow"))
-        
-        if j == 0:
-            # Si es el primer experimento, tomamos los primeros 4 bloques
-            onset_exp = df_beh[df_beh["exp"] == exp].onset.max()
-            df_exp = df_physio.iloc[:int(onset_exp)+512]
-            blocks_onsets = df_beh[df_beh["order"] == 0].onset.values[0:4]
-            blocks_finish = df_beh[df_beh["order"] == 63].onset.values[0:4]
-
-        else:
-            # Si es el segundo, tomamos los últimos 4
-            onset_exp = df_beh[df_beh["exp"] == exp].onset.min()
-            df_exp = df_physio.iloc[int(onset_exp)-512:]
-            blocks_onsets = df_beh[df_beh["order"] == 0].onset.values[4:]
-            blocks_finish = df_beh[df_beh["order"] == 63].onset.values[4:]
-            
-        list_dfs_blocks = []
-        for n in range(4):
-            df_eda = pd.DataFrame()
-
-            print(colored(f'Procesando bloque {n+1}/4',"light_red"))
-            # Extraemos el bloque
-            bloque = n
-            block_onset = blocks_onsets[n]
-            block_finish = blocks_finish[n]
-
-            df_bloque = df_exp.loc[int(block_onset)-512:int(block_finish)+512]
-
-            # Extraemos features de EDA
-            eda_clean = nk.eda_clean(df_bloque["eda"], sampling_rate=256, method="BioSPPy")
-            df_eda["EDA_Raw"] = df_bloque["eda"].reset_index().drop("index",axis=1)
-            df_eda["EDA_Clean"] = eda_clean
-            df_eda["EDA_Clean_normalized"] = nk.standardize(df_eda["EDA_Clean"])
-
-            df_eda["EDA_Phasic"], df_eda["SMNA"], df_eda["EDA_Tonic"],_,_, df_eda["error"], coef_ajuste = cvxEDA_pyEDA(eda_clean, delta=1/256)
-            df_eda["EDA_Phasic_normalized"] = nk.standardize(df_eda["EDA_Phasic"])
-            df_eda["EDA_Tonic_normalized"] = nk.standardize(df_eda["EDA_Tonic"])
-
-            peaks, info = nk.eda_peaks(df_eda["EDA_Phasic_normalized"], # Peaks a partir de los datos normalizados por bloque y por sujeto
-                           sampling_rate=256,
-                           method="kim2004",
-                           amplitude_min=0.05) # Bastante flexible!!
-            
-            df_eda["SCR_Onsets"] = peaks["SCR_Onsets"]
-            df_eda["SCR_Peaks"] = peaks["SCR_Peaks"]
-            df_eda["SCR_Height"] = peaks["SCR_Height"]
-            df_eda["SCR_Amplitude"] = peaks["SCR_Amplitude"]
-            df_eda["SCR_RiseTime"] = peaks["SCR_RiseTime"]
-            df_eda["SCR_Recovery"] = peaks["SCR_Recovery"]
-            df_eda["SCR_RecoveryTime"] = peaks["SCR_RecoveryTime"]
-
-            df_eda["subject"] = df_beh["subject"][0]
-            df_eda["exp"] = exp
-            df_eda["block"] = bloque
-            df_eda["stimuli"] = df_bloque["estimulo"].reset_index().drop("index",axis=1)
-            
-            # Plot para verificar
-            mask = (df_beh["onset"] >= block_onset) & (df_beh["onset"] <= block_finish)
-            onsets_in = df_beh.loc[mask, "onset"]-block_onset
-
-            plt.figure()
-            plt.plot(df_eda["EDA_Raw"], label="EDA Raw")
-            plt.plot(df_eda["EDA_Clean"], label="EDA Clean")
-            for onset in onsets_in:
-                plt.axvline(x=onset,
-                color="red",
-                linestyle=":",   
-                linewidth=1)
-            plt.legend()
-            plt.title(f'{df_beh["subject"][0]} - {exp}, B. {n+1}/4')
-            plt.savefig(f"plots/pre-processing/eda_raw_vs_clean_{df_beh['subject'][0]}_{exp}_bloque{n+1}.png")
-            plt.show()
-            
-            print(colored(f'Coef. de ajuste: {coef_ajuste}',"magenta"))
-
-            list_coefs_ajuste.append(coef_ajuste)
-            list_dfs_blocks.append(df_eda)
-
-        df_eda_exp = pd.concat(list_dfs_blocks)
-        list_dfs_eda.append(df_eda_exp)
-        df_eda_exp.to_csv(f"datos_physio/{df_beh['subject'][0]}/df_eda_{df_beh['subject'][0]}_{exp}.csv", index=False)
-
-try:
-    pd.concat(list_dfs_eda).to_csv(f"datos_physio/eda_all_subjects_full_exps.csv", index=False)
-
-except ValueError:
-    print(colored("No se puede concatenar, probablemente lista vacía","red"))
-
-# %%
+preprocess_subjects(subjects, excluded_subjects, new_pipeline)

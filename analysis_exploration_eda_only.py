@@ -14,10 +14,12 @@ from scipy.stats import levene
 from scipy.stats import wilcoxon
 from termcolor import colored
 
-
 #%% Definición de funciones
 
 def test_frequency_before_cleaning(df, max_freq=0.3):
+    """
+    Calcula el espectro simpático de la señal EDA antes de cualquier limpieza
+    """
     figures = {}
     for subject, df_sub in df.groupby("subject"):
         # Concatenar la señal cruda de todos los experimentos del sujeto
@@ -40,6 +42,9 @@ def test_frequency_before_cleaning(df, max_freq=0.3):
     return figures
 
 def check_errors_qqplot(df):
+    """
+    Genera Q-Q plots para la columna 'error' del DataFrame,
+    """
     grouped = df.groupby(['subject', 'exp', 'block'])
 
     for (subject, exp, block), df_sub in grouped:
@@ -50,6 +55,9 @@ def check_errors_qqplot(df):
         plt.show()
 
 def check_error_boxplot(df):
+    """
+    Genera boxplots de la columna 'error' del DataFrame
+    """
     grouped = df.groupby(['subject', 'exp', 'block'])
 
     for (subject, exp, block), df_sub in grouped:
@@ -61,6 +69,9 @@ def check_error_boxplot(df):
         plt.show()
 
 def check_error_histogram(df):
+    """
+    Genera histogramas de la columna 'error' del DataFrame
+    """
     grouped = df.groupby(['subject', 'exp', 'block'])
 
     for (subject, exp, block), df_sub in grouped:
@@ -72,8 +83,10 @@ def check_error_histogram(df):
         plt.tight_layout()
         plt.show()
 
-# Función para formatear el p-valor, para gráficos más que nada
 def format_p_value(p):
+    """
+    Formatea el valor p para mostrarlo de manera legible.
+    """
     if p < 0.001:
         return "<0.001"
     elif p < 0.01:
@@ -84,6 +97,11 @@ def format_p_value(p):
         return f"{p:.2f}"
 
 def plot_error_distributions(df):
+    """
+    Plotea la distribución de errores con
+    histogramas, Q-Q plots y violinplots
+    """
+    
     grouped = df.groupby(['subject', 'exp', 'block'])
 
     for (subject, exp, block), df_sub in grouped:
@@ -312,8 +330,9 @@ def scr_event_analysis(df, df_beh, condicion, remove_outliers=False, show=False,
                 features['SCR_RecoveryTime'] = features['SCR_RecoveryTime'].fillna(0)
 
                 #!! Ojo porque esto capaz convendría hacerlo por sujeto y no por bloque                
+                #!! Igualmente en preprocessing_eda_only.py se sacan features de picos desde la señal ya normalizada
                 # ------------------------------------------------------
-                # ⭐ Z‑scores antes de concatenar
+                # Z‑scores antes de concatenar
                 # ------------------------------------------------------
                 num_cols = features.select_dtypes(include=[np.number]).columns
                 features[num_cols] = features[num_cols].apply(
@@ -405,6 +424,40 @@ def scr_event_analysis(df, df_beh, condicion, remove_outliers=False, show=False,
     return pd.DataFrame(resultados)
 
 def eda_interval_analysis(df, remove_outliers=True, show=False, save=False):
+    """
+    Resume bloque por bloque las respuestas de actividad 
+    electrodérmica (EDA) y compara entre condiciones
+    experimentales («exp»).
+
+    ----------
+    Parámetros
+    ----------
+    df : pandas.DataFrame
+        DataFrame a nivel de muestra con al menos las columnas  
+        ``["subject", "exp", "block",
+        "EDA_Phasic_normalized", "EDA_Tonic_normalized", "SMNA"]``.
+    remove_outliers : bool, opcional (por defecto ``True``)
+        Si es ``True`` se excluyen valores atípicos (IQR · 1.5) **solo**
+        para los tests estadísticos y los gráficos.
+    show : bool, opcional (por defecto ``False``)
+        Muestra los gráficos de caja + puntos para cada métrica.
+    save : bool, opcional (por defecto ``False``)
+        Guarda cada gráfico en PNG dentro de
+        ``plots/diff_test_between_exps/``. El nombre incluye el test,
+        la métrica y la etiqueta ``_wo-outliers`` si corresponde.
+
+    ----------
+    Devuelve
+    ----------
+    features_df : pandas.DataFrame
+        Una fila por ``subject`` × ``exp`` × ``block`` con todas las features
+        calculadas (salida de *NeuroKit2* + características añadidas).
+    stats_df : pandas.DataFrame
+        Tabla resumen con una fila por métrica comparada. Columnas clave:
+        ``["Feature", "Test", "n_g1", "n_g2",
+          "KS_g1_p", "KS_g2_p", "EqualVar_p",
+          "Statistic", "p_value", "Significant"]``.
+    """
     df_features_list = []
 
     # Bucle por agrupaciones
@@ -414,6 +467,7 @@ def eda_interval_analysis(df, remove_outliers=True, show=False, save=False):
             sampling_rate=256,
         )
 
+        # Se podrían agregar más features
         nk_features["EDA_Phasic_Mean"] = grp["EDA_Phasic_normalized"].mean()
         nk_features["EDA_Tonic_Mean"] = grp["EDA_Tonic_normalized"].mean()
         nk_features["SMNA_Mean"] = grp["SMNA"].mean()
