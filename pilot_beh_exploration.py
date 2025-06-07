@@ -210,52 +210,21 @@ df_all_subjects = pd.concat(list_dfs_all_subjects).drop("Unnamed: 0",axis=1)
 
 df_all_subjects.to_csv("data/df_all_subjects_full_trials.csv")
 
-#%% Funcion para hacer descriptivo por condiciones
-
-def filtrate_and_mean(df, condiciones):
-    """
-    Devuelve un DataFrame que solo incluye las filas 
-    donde la columna 'label' contiene el texto de condición.
-
-    df: El df_all_subjects
-    condicion: La condición única por la que quieras hacer un promedio
-
-    """
-    # Aseguramos que 'condiciones' sea una lista
-    if isinstance(condiciones, str):
-        condiciones = [condiciones]
-    
-    # Creamos una máscara booleana que inicialmente sea True para todas las filas
-    mask = pd.Series([True] * len(df), index=df.index)
-    
-    # Para cada condición, ajustamos la máscara para que solo queden las filas
-    # que contengan esa condición (subcadena) en la columna 'label'
-    for cond in condiciones:
-        mask = mask & df['label'].str.contains(cond, case=False, na=False)
-    
-    # Filtramos con la máscara final y calculamos la media (descartando ciertas columnas)
-    df_filtrado = df[mask].copy()
-    return df_filtrado.drop(columns=['label', 'subject', 'n']).mean()
-
-print("-"*5+"Efecto Priming General"+"-"*5)
-print("*Congruente")
-print(filtrate_and_mean(df_all_subjects, "congruente"))
-print("\n"+"*Incongruente")
-print(filtrate_and_mean(df_all_subjects, "incongruente"))
-
-print("\n"+"-"*5+"Efecto Priming Emocionalmente Act."+"-"*5)
-print("*Congruente")
-print(filtrate_and_mean(df_all_subjects, ["congruente","emocionalmente_activante"]))
-print("\n"+"*Incongruente")
-print(filtrate_and_mean(df_all_subjects, ["incongruente","emocionalmente_activante"]))
-
-print("\n"+"-"*5+"Efecto Priming Etiqueta"+"-"*5)
-print("*Congruente")
-print(filtrate_and_mean(df_all_subjects, ["congruente","etiqueta"]))
-print("\n"+"*Incongruente")
-print(filtrate_and_mean(df_all_subjects, ["incongruente","etiqueta"]))
-
 #%%
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # %%

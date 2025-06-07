@@ -323,7 +323,7 @@ def scr_event_analysis(df, df_beh, condicion, remove_outliers=False, show=False,
                                           epochs_end=6)
         
                 features = nk.eda_eventrelated(epochs, silent=True)
-                #!! Handleo los nans como 0, porque sino después no puedo hacer pruebas de supuestos
+                
                 features['SCR_Peak_Amplitude'] = features['SCR_Peak_Amplitude'].fillna(0)
                 features['SCR_Peak_Amplitude_Time'] = features['SCR_Peak_Amplitude_Time'].fillna(0)
                 features['SCR_RiseTime'] = features['SCR_RiseTime'].fillna(0)
@@ -565,13 +565,14 @@ def eda_interval_analysis(df, remove_outliers=True, show=False, save=False):
 
 #%%
 # Definir señal a graficar y cargar datos
-señal = ['EDA_Phasic']
+señal = ['EDA_Clean']
 df = pd.read_csv("datos_physio/eda_all_subjects_full_exps.csv")
 df_beh = pd.read_csv("data/df_all_subjects_full_trials.csv")
 condiciones =  ['congruente', 'valencia_palabra', 'valencia_rostro', 
                 'arousal_palabra', 'rostro_sexo']
 condicion = condiciones[0]  # Cambiar según la condición que se quiera analizar
 
+#%%
 plot_exps_by_subject(df, señal)
 plot_avg_exp(df, señal)
 

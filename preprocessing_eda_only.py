@@ -282,3 +282,4 @@ excluded_subjects = {"S4": "El canal de estímulo está roto",
                      "S1": "No hay datos, creo que este solo fue una prueba"}
 
 preprocess_subjects(subjects, excluded_subjects, new_pipeline)
+# %%
